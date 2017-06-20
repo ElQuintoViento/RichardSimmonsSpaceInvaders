@@ -13,6 +13,7 @@ IMAGE_RICHARD_SIMMONS = "richard_simmons_small_2.png"
 TIME_TICK_LOOP = 120
 #
 MARGIN_SCREEN = 20
+MARGIN_OPPONENTS = MARGIN_SCREEN + 55
 HEIGHT_SCREEN = 720
 WIDTH_SCREEN = 1080
 LENGTH_BOX_SHIP = 50
@@ -22,7 +23,7 @@ HEIGHT_FRAME_PLAYER = max(
 WIDTH_FRAME_PLAYER = WIDTH_SCREEN
 WIDTH_FRAME_PLAYER_HALF = WIDTH_FRAME_PLAYER // 2
 # Opponent frame
-FACTOR_HEIGHT_FRAME_OPPONENTS = 1.0 / 3.0
+FACTOR_HEIGHT_FRAME_OPPONENTS = 1.0 / 2.25
 HEIGHT_FRAME_OPPONENTS = (
     HEIGHT_SCREEN - HEIGHT_FRAME_PLAYER)
 WIDTH_FRAME_OPPONENTS = WIDTH_SCREEN
@@ -33,6 +34,8 @@ ACCELERATION_MULTIPLIER = 2.5
 DECCELERATION_FACTOR = 0.85
 #
 SECONDS_TO_MICRO_SECONDS = 1000000
+#
+OPPONENT_COUNT_COLUMN_AND_ROW = 5
 
 
 def sign(value):
@@ -189,27 +192,29 @@ class OpponentSquadron:
         start_bottom_edge = int(
             float(HEIGHT_FRAME_OPPONENTS) * FACTOR_HEIGHT_FRAME_OPPONENTS)
         horizontal_separation = (
-            (WIDTH_SCREEN - (2 * MARGIN_SCREEN)) / self.row_and_column_size)
+            (WIDTH_SCREEN - (2 * MARGIN_OPPONENTS)) / self.row_and_column_size)
         vertical_separation = start_bottom_edge / self.row_and_column_size
         for r in range(0, self.row_and_column_size):
             for c in range(0, self.row_and_column_size):
                 ship = OpponentSpaceShip(self.screen)
                 id = ship.id
-                x = int((0.5 + float(r)) * horizontal_separation)
+                x = int(
+                    (0.5 + float(r)) * horizontal_separation +
+                    MARGIN_OPPONENTS)
                 y = int((0.5 + float(c)) * vertical_separation)
-                #ship.set_location(x, y)
-                print("{} coords: {}".format(ship.id, ship.get_coordinates()))
+                ship.set_location(x, y)
                 if r == 0:
                     self.left[id] = ship
                 if r == (self.row_and_column_size - 1):
                     self.right[id] = ship
                 if c == (self.row_and_column_size - 1):
                     self.front_line[id] = ship
+                self.ships[id] = ship
 
     def redraw(self):
-        for ship in self.ships:
+        for id, ship in self.ships.items():
             ship.redraw()
-            print("{} coords: {}".format(ship.id, ship.get_coordinates()))
+            # print("{} coords: {}".format(ship.id, ship.get_coordinates()))
 
 
 class Game:
@@ -229,7 +234,8 @@ class Game:
         self.human_ship.center()
 
     def init_opponent_squadron(self):
-        self.opponent_squadron = OpponentSquadron(self.screen, 3)
+        self.opponent_squadron = OpponentSquadron(
+            self.screen, OPPONENT_COUNT_COLUMN_AND_ROW)
 
     def redraw(self):
         self.background.redraw()
