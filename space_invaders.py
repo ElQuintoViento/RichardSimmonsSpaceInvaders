@@ -2,6 +2,9 @@
 from time import time
 import pygame
 
+
+#
+SECONDS_TO_MICRO_SECONDS = 1000000
 #
 TUPLE_COLOR_BLACK = (0, 0, 0)
 TUPLE_COLOR_GREEN = (0, 226, 143)
@@ -32,10 +35,16 @@ ACCELERATION_VALUE_MAX = 50
 ACCELERATION_INCREMENT_HUMAN = 10
 ACCELERATION_MULTIPLIER = 2.5
 DECCELERATION_FACTOR = 0.85
+INCREMENT_MOVE_X_OPPONENT = 4
+INCREMENT_MOVE_Y_OPPONENT = 10
 #
-SECONDS_TO_MICRO_SECONDS = 1000000
+COUNT_COLUMN_AND_ROW_OPPONENT = 5
 #
-OPPONENT_COUNT_COLUMN_AND_ROW = 5
+DIRECTION_NONE = -1
+DIRECTION_LEFT = 0
+DIRECTION_RIGHT = 1
+DIRECTION_UP = 2
+DIRECTION_DOWN = 3
 
 
 def sign(value):
@@ -62,7 +71,16 @@ class BasicSprite:
             self.rect.top,
             self.rect.bottom)
 
+    def get_left_gap(self):
+        return self.rect.left
+
+    def get_right_gap(self):
+        return (WIDTH_SCREEN - self.rect.right)
+
     def set_location(self, x, y):
+        center_change = [
+            self.rect.centerx,
+            self.rect.centery]
         self.rect.centerx = x
         self.rect.centery = y
         #
@@ -71,9 +89,13 @@ class BasicSprite:
         elif self.rect.right > (WIDTH_SCREEN - MARGIN_SCREEN):
             self.rect.centerx = (
                 (WIDTH_SCREEN - MARGIN_SCREEN) - self.dimensions[0] // 2)
+        #
+        center_change[0] = self.rect.centerx - center_change[0]
+        center_change[1] = self.rect.centery - center_change[1]
+        return center_change
 
     def translate(self, x, y):
-        self.set_location(self.rect.centerx + x, self.rect.centery + y)
+        return self.set_location(self.rect.centerx + x, self.rect.centery + y)
 
     def redraw(self):
         self.screen.blit(self.sprite, self.rect)
@@ -180,6 +202,8 @@ class OpponentSpaceShip(SpaceShip):
 
 class OpponentSquadron:
     def __init__(self, screen, row_and_column_size):
+        self.direction = DIRECTION_RIGHT
+        self.direction_previous = self.direction
         self.screen = screen
         self.row_and_column_size = row_and_column_size
         self.ships = {}
@@ -211,7 +235,59 @@ class OpponentSquadron:
                     self.front_line[id] = ship
                 self.ships[id] = ship
 
+    def check_reached_boundary(self):
+        ships = self.left
+        if self.direction == DIRECTION_RIGHT:
+            ships = self.right
+        ship = list(ships.values())[0]
+        #
+        gap = MARGIN_SCREEN * 2
+        if self.direction == DIRECTION_RIGHT:
+            gap = ship.get_right_gap()
+        else:
+            gap = ship.get_left_gap()
+        #
+        return (gap <= MARGIN_SCREEN)
+
+    def update_direction(self):
+        tmp_direction = self.direction
+        # Currently moving left
+        if ((self.direction == DIRECTION_LEFT) or
+                (self.direction == DIRECTION_RIGHT)):
+            if self.check_reached_boundary():
+                self.direction = DIRECTION_DOWN
+                self.direction_previous = tmp_direction
+        # Switch to left or right?
+        elif self.direction == DIRECTION_DOWN:
+            if self.direction_previous == DIRECTION_LEFT:
+                self.direction = DIRECTION_RIGHT
+            else:
+                self.direction = DIRECTION_LEFT
+            self.direction_previous = tmp_direction
+
+    def move_ships(self):
+        translation = [0, 0]
+        #
+        self.update_direction()
+        #
+        if self.direction == DIRECTION_LEFT:
+            translation = [-1 * INCREMENT_MOVE_X_OPPONENT, 0]
+        elif self.direction == DIRECTION_RIGHT:
+            translation = [INCREMENT_MOVE_X_OPPONENT, 0]
+        elif self.direction == DIRECTION_DOWN:
+            translation = [0, INCREMENT_MOVE_Y_OPPONENT]
+        #
+        '''
+        ships_to_move = {
+            id: ship
+            for id, ship in ships_to_move.items() if ship not in ships_moved}
+        '''
+        #for id, ship in ships_to_move.items():
+        for id, ship in self.ships.items():
+            ship.translate(translation[0], translation[1])
+
     def redraw(self):
+        self.move_ships()
         for id, ship in self.ships.items():
             ship.redraw()
             # print("{} coords: {}".format(ship.id, ship.get_coordinates()))
@@ -235,7 +311,7 @@ class Game:
 
     def init_opponent_squadron(self):
         self.opponent_squadron = OpponentSquadron(
-            self.screen, OPPONENT_COUNT_COLUMN_AND_ROW)
+            self.screen, COUNT_COLUMN_AND_ROW_OPPONENT)
 
     def redraw(self):
         self.background.redraw()
