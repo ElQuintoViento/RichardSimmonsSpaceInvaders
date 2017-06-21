@@ -12,11 +12,11 @@ TUPLE_COLOR_RED = (226, 70, 70)
 #
 IMAGE_BIG_MAC = "big_mac_small.png"
 IMAGE_RICHARD_SIMMONS = "richard_simmons_small_2.png"
-#
+# Frames per second
 TIME_TICK_LOOP = 120
 #
 MARGIN_SCREEN = 20
-MARGIN_OPPONENTS = MARGIN_SCREEN + 55
+MARGIN_OPPONENTS = MARGIN_SCREEN + 105
 HEIGHT_SCREEN = 720
 WIDTH_SCREEN = 1080
 LENGTH_BOX_SHIP = 50
@@ -26,7 +26,7 @@ HEIGHT_FRAME_PLAYER = max(
 WIDTH_FRAME_PLAYER = WIDTH_SCREEN
 WIDTH_FRAME_PLAYER_HALF = WIDTH_FRAME_PLAYER // 2
 # Opponent frame
-FACTOR_HEIGHT_FRAME_OPPONENTS = 1.0 / 2.25
+FACTOR_HEIGHT_FRAME_OPPONENTS = 1.0 / 2.0
 HEIGHT_FRAME_OPPONENTS = (
     HEIGHT_SCREEN - HEIGHT_FRAME_PLAYER)
 WIDTH_FRAME_OPPONENTS = WIDTH_SCREEN
@@ -35,16 +35,20 @@ ACCELERATION_VALUE_MAX = 50
 ACCELERATION_INCREMENT_HUMAN = 10
 ACCELERATION_MULTIPLIER = 2.5
 DECCELERATION_FACTOR = 0.85
-INCREMENT_MOVE_X_OPPONENT = 4
-INCREMENT_MOVE_Y_OPPONENT = 10
+INCREMENT_MOVE_X_OPPONENT = 10
+INCREMENT_MOVE_Y_OPPONENT = 30
 #
-COUNT_COLUMN_AND_ROW_OPPONENT = 5
+COUNT_COLUMN_AND_ROW_OPPONENT = 7
 #
 DIRECTION_NONE = -1
 DIRECTION_LEFT = 0
 DIRECTION_RIGHT = 1
 DIRECTION_UP = 2
 DIRECTION_DOWN = 3
+#
+WINNER_NONE = -1
+WINNER_HUMAN = 0
+WINNER_OPPONENT = 1
 
 
 def sign(value):
@@ -58,11 +62,32 @@ class BasicSprite:
         self.create_random_id()
         self.screen = screen
         self.sprite = sprite
-        self.dimensions = sprite.get_size()
         self.rect = rect
+        self.update_dimensions()
+        self.update_mask()
+        self.set_exists(True)
 
+    # Assigns an id using current time in microseconds
     def create_random_id(self):
         self.id = int(time() * SECONDS_TO_MICRO_SECONDS)
+
+    # Ensures destroyed object won't be redrawn; however, object needs to be
+    # removed externally (i.e. where it is stored)
+    def destroy(self):
+        self.set_exists(False)
+
+    def update_rect(self):
+        self.rect = self.sprite.get_rect()
+
+    def update_dimensions(self):
+        self.dimensions = self.sprite.get_size()
+
+    def update_mask(self):
+        self.mask = pygame.mask.from_surface(self.sprite)
+        #print("\nmask {}\n".format(self.mask.__dir__()))
+
+    def get_mask(self):
+        return self.mask
 
     def get_coordinates(self):
         return (
@@ -71,34 +96,67 @@ class BasicSprite:
             self.rect.top,
             self.rect.bottom)
 
+    # Distance between left side and left side of screen
     def get_left_gap(self):
         return self.rect.left
 
+    # Distance between right side and right side of screen
     def get_right_gap(self):
         return (WIDTH_SCREEN - self.rect.right)
 
+    def exists(self):
+        return self._exists
+
+    # Determine if two sprites overlap/collide
+    def check_overlaps(self, basic_sprite):
+        value = self.mask.overlap(
+            basic_sprite.get_mask(),
+                (basic_sprite.rect.left - self.rect.left,
+                    basic_sprite.rect.top - self.rect.top))
+        return value
+
+    def set_exists(self, exists):
+        self._exists = exists
+
+    # Move to position unless outside of allowed coordinates; returns actual
+    # position delta in contrast with asked
     def set_location(self, x, y):
         center_change = [
             self.rect.centerx,
             self.rect.centery]
         self.rect.centerx = x
         self.rect.centery = y
-        #
+        # Ensure within allowed coordinates
         if self.rect.left < MARGIN_SCREEN:
             self.rect.centerx = MARGIN_SCREEN + self.dimensions[0] // 2
         elif self.rect.right > (WIDTH_SCREEN - MARGIN_SCREEN):
             self.rect.centerx = (
                 (WIDTH_SCREEN - MARGIN_SCREEN) - self.dimensions[0] // 2)
-        #
+        # Return true position delta
         center_change[0] = self.rect.centerx - center_change[0]
         center_change[1] = self.rect.centery - center_change[1]
         return center_change
 
+    # Scale sprite to box container (max_dimension X max_dimension)
+    def scale_to_fit(self, max_dimension):
+        scale_factor = (
+            float(max_dimension) / float(max(*self.dimensions)))
+        width = int(float(self.dimensions[0]) * scale_factor)
+        height = int(float(self.dimensions[1]) * scale_factor)
+        self.sprite = pygame.transform.scale(self.sprite, (width, height))
+        self.update_rect()
+        self.update_dimensions()
+        self.update_mask()
+
+    # Translate by some delta ensuring to stay within allowed range
     def translate(self, x, y):
         return self.set_location(self.rect.centerx + x, self.rect.centery + y)
 
+    # Only redraw if 'exists'
     def redraw(self):
-        self.screen.blit(self.sprite, self.rect)
+        if self.exists():
+            self.screen.blit(self.sprite, self.rect)
+        return self.exists()
 
 
 class Background(BasicSprite):
@@ -110,6 +168,22 @@ class Background(BasicSprite):
         self.sprite.fill(TUPLE_COLOR_BLACK)
 
 
+# Simple Text Label
+class Text(BasicSprite):
+    def __init__(self, screen, text, color, font, size):
+        self.text = text
+        self.color = color
+        self.font = font
+        self.size = size
+        self.my_font = pygame.font.SysFont(font, size)
+        self.label = self.my_font.render(text, 1, color)
+        super().__init__(
+            screen,
+            self.label,
+            self.label.get_rect())
+
+
+# Base spaceship
 class SpaceShip(BasicSprite):
     def __init__(self, screen, ship_image, default_square_color):
         # Attempt to load image
@@ -122,18 +196,9 @@ class SpaceShip(BasicSprite):
             # Set color
             sprite.fill(default_square_color)
         super().__init__(screen, sprite, sprite.get_rect())
-        self.set_max_dimension()
+        self.scale_to_fit(LENGTH_BOX_SHIP)
         # default location
         self.set_location(0, 0)
-
-    def set_max_dimension(self):
-        scale_factor = (
-            float(LENGTH_BOX_SHIP) / float(max(*self.dimensions)))
-        width = int(float(self.dimensions[0]) * scale_factor)
-        height = int(float(self.dimensions[1]) * scale_factor)
-        self.sprite = pygame.transform.scale(self.sprite, (width, height))
-        self.rect = self.sprite.get_rect()
-        self.dimensions = self.sprite.get_size()
 
 
 class HumanSpaceShip(SpaceShip):
@@ -144,6 +209,7 @@ class HumanSpaceShip(SpaceShip):
         # Set 0 acceleration
         self.acceleration = [0, 0]
 
+    # Center within allowed human coordinates
     def center(self):
         x = WIDTH_FRAME_PLAYER / 2
         y = (
@@ -151,6 +217,8 @@ class HumanSpaceShip(SpaceShip):
             (HEIGHT_FRAME_PLAYER / 2))
         self.set_location(x, y)
 
+    # Accelerate in only -/+ x direction; inhibit acceleration while
+    # approaching sides
     def accelerate(self, x, y):
         # X
         self.acceleration[0] += x
@@ -179,6 +247,7 @@ class HumanSpaceShip(SpaceShip):
             sign(self.acceleration[1]) *
             min(self.acceleration[1], ACCELERATION_VALUE_MAX))
 
+    # Decrement acceleration to inhibit continuous movement
     def deccelerate(self):
         if abs(self.acceleration[0]) > 0:
             self.acceleration[0] = int(
@@ -200,6 +269,7 @@ class OpponentSpaceShip(SpaceShip):
         self.set_location(WIDTH_SCREEN / 2, HEIGHT_SCREEN / 2)
 
 
+# Handles all opponent space ships
 class OpponentSquadron:
     def __init__(self, screen, row_and_column_size):
         self.direction = DIRECTION_RIGHT
@@ -212,6 +282,11 @@ class OpponentSquadron:
         self.front_line = {}
         self.setup_ships()
 
+    # Return front ships
+    def get_front_line_ships(self):
+        return self.front_line
+
+    # Evenly space out ships within initial allowed range
     def setup_ships(self):
         start_bottom_edge = int(
             float(HEIGHT_FRAME_OPPONENTS) * FACTOR_HEIGHT_FRAME_OPPONENTS)
@@ -235,6 +310,7 @@ class OpponentSquadron:
                     self.front_line[id] = ship
                 self.ships[id] = ship
 
+    # Check whether left or right ships reached allowed edge/coordinates
     def check_reached_boundary(self):
         ships = self.left
         if self.direction == DIRECTION_RIGHT:
@@ -249,6 +325,7 @@ class OpponentSquadron:
         #
         return (gap <= MARGIN_SCREEN)
 
+    # Update which direction ships are flying in
     def update_direction(self):
         tmp_direction = self.direction
         # Currently moving left
@@ -265,6 +342,7 @@ class OpponentSquadron:
                 self.direction = DIRECTION_LEFT
             self.direction_previous = tmp_direction
 
+    # Calculate translation delta and move
     def move_ships(self):
         translation = [0, 0]
         #
@@ -286,7 +364,7 @@ class OpponentSquadron:
         for id, ship in self.ships.items():
             ship.translate(translation[0], translation[1])
 
-    def redraw(self):
+    def update(self):
         self.move_ships()
         for id, ship in self.ships.items():
             ship.redraw()
@@ -296,9 +374,14 @@ class OpponentSquadron:
 class Game:
     def __init__(self):
         pygame.init()
+        self.init_winner()
         self.init_screen()
         self.init_human_ship()
         self.init_opponent_squadron()
+
+    def init_winner(self):
+        self.winner = WINNER_NONE
+        self.winner_text = None
 
     def init_screen(self):
         self.screen = pygame.display.set_mode(
@@ -313,21 +396,70 @@ class Game:
         self.opponent_squadron = OpponentSquadron(
             self.screen, COUNT_COLUMN_AND_ROW_OPPONENT)
 
-    def redraw(self):
+    def check_collisions(self):
+        if self.human_ship is not None:
+            collided = False
+            ships = self.opponent_squadron.get_front_line_ships().items()
+            for id, ship in ships:
+                if self.human_ship.check_overlaps(ship):
+                    ship.destroy()
+                    collided = True
+            #
+            if collided:
+                self.human_ship.destroy()
+
+    def clean_up(self):
+        if self.human_ship is not None:
+            if not self.human_ship.exists():
+                self.human_ship = None
+
+    def update_winner(self):
+        if self.winner == WINNER_NONE:
+            text = None
+            color = None
+            if self.human_ship is None:
+                self.winner = WINNER_OPPONENT
+                text = "Opponent"
+                color = TUPLE_COLOR_RED
+            elif self.opponent_squadron is None:
+                self.winner = WINNER_HUMAN
+                text = "Human"
+                color = TUPLE_COLOR_GREEN
+            else:
+                self.winner = WINNER_NONE
+            #
+            if self.winner != WINNER_NONE:
+                text = "{} Wins!".format(text)
+                self.winner_text = Text(
+                    self.screen, text, color, "arial", 60)
+                self.winner_text.set_location(
+                    WIDTH_SCREEN // 2, HEIGHT_SCREEN // 2)
+
+    def update(self):
         self.background.redraw()
-        self.human_ship.redraw()
-        self.opponent_squadron.redraw()
+        #
+        self.update_winner()
+        if self.winner == WINNER_NONE:
+            #
+            self.check_collisions()
+            self.clean_up()
+            if self.human_ship is not None:
+                self.human_ship.redraw()
+            self.opponent_squadron.update()
+        else:
+            self.winner_text.redraw()
         # Update display
         pygame.display.flip()
 
     def handle_key_pressed(self):
-        # Get key input
-        key_input = pygame.key.get_pressed()
-        #
-        if key_input[pygame.K_LEFT]:
-            self.human_ship.accelerate(-1 * ACCELERATION_INCREMENT_HUMAN, 0)
-        elif key_input[pygame.K_RIGHT]:
-            self.human_ship.accelerate(ACCELERATION_INCREMENT_HUMAN, 0)
+        if self.human_ship is not None:
+            # Get key input
+            key_input = pygame.key.get_pressed()
+            #
+            if key_input[pygame.K_LEFT]:
+                self.human_ship.accelerate(-1 * ACCELERATION_INCREMENT_HUMAN, 0)
+            elif key_input[pygame.K_RIGHT]:
+                self.human_ship.accelerate(ACCELERATION_INCREMENT_HUMAN, 0)
 
     def handle_events(self):
         for event in pygame.event.get():
@@ -336,14 +468,15 @@ class Game:
                 exit(0)
 
     def loop(self):
-        self.redraw()
+        self.update()
         self.clock = pygame.time.Clock()
         while True:
+            # Frames per second
             self.clock.tick(TIME_TICK_LOOP)
             pygame.event.pump()
             self.handle_key_pressed()
             self.handle_events()
-            self.redraw()
+            self.update()
 
 
 def main():
